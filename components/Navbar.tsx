@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs';
 
 export default function Navbar() {
   return (
@@ -10,13 +11,21 @@ export default function Navbar() {
           </span>
         </Link>
         <div className="flex items-center gap-4">
-          {/* Auth placeolders */}
-          <button className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
-            Sign In
-          </button>
-          <button className="text-sm font-medium bg-primary text-secondary px-4 py-2 rounded-md hover:bg-primary/90 transition-colors shadow-sm">
-            Get Started
-          </button>
+          <Show when="signed-out">
+            <SignInButton mode="modal">
+              <button className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+                Sign In
+              </button>
+            </SignInButton>
+            <SignUpButton mode="modal">
+              <button className="text-sm font-medium bg-primary text-secondary px-4 py-2 rounded-md hover:bg-primary/90 transition-colors shadow-sm">
+                Get Started
+              </button>
+            </SignUpButton>
+          </Show>
+          <Show when="signed-in">
+            <UserButton userProfileMode="navigation" userProfileUrl="/profile" />
+          </Show>
         </div>
       </div>
     </header>

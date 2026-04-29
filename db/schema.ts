@@ -25,6 +25,18 @@ export const highlightStatusEnum = pgEnum("highlight_status", [
   "failed",
 ]);
 
+export const users = pgTable("users", {
+  id: text("id").primaryKey(), // Clerk User ID
+  email: text("email").notNull().unique(),
+  name: text("name"),
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
 export const videos = pgTable("videos", {
   id: uuid("id").defaultRandom().primaryKey(),
   clerkUserId: text("clerk_user_id").notNull(),
@@ -68,7 +80,15 @@ export const highlights = pgTable("highlights", {
 });
 
 // Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  videos: many(videos),
+}));
+
 export const videosRelations = relations(videos, ({ many, one }) => ({
+  user: one(users, {
+    fields: [videos.clerkUserId],
+    references: [users.id],
+  }),
   highlights: many(highlights),
   transcript: one(transcripts, {
     fields: [videos.id],
