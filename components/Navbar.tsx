@@ -1,22 +1,68 @@
-import Link from 'next/link';
+import { UserButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
+import Link from "next/link";
 
-export default function Navbar() {
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+export default async function Navbar() {
+  const { userId } = await auth();
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="max-w-7xl mx-auto px-4 md:px-8 flex h-16 items-center justify-between">
-        <Link href="/" className="flex items-center space-x-2">
-          <span className="font-bold text-2xl bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            VidShorts
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-background/75 backdrop-blur-xl">
+      <div className="mx-auto flex h-[4.5rem] max-w-7xl items-center justify-between px-4 md:px-8">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="flex size-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)_inset]">
+            <div className="size-3 rounded-full bg-gradient-to-br from-primary via-accent to-amber-300 shadow-[0_0_18px_rgba(125,92,255,0.8)]" />
+          </div>
+          <span className="bg-gradient-to-r from-white via-white to-white/65 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
+            ViralClip AI
           </span>
         </Link>
-        <div className="flex items-center gap-4">
-          {/* Auth placeolders */}
-          <button className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
-            Sign In
-          </button>
-          <button className="text-sm font-medium bg-primary text-secondary px-4 py-2 rounded-md hover:bg-primary/90 transition-colors shadow-sm">
-            Get Started
-          </button>
+        <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
+          <a href="/#features" className="transition-colors hover:text-white">
+            Features
+          </a>
+          <a href="/#workflow" className="transition-colors hover:text-white">
+            Workflow
+          </a>
+          <a href="/#pricing" className="transition-colors hover:text-white">
+            Pricing
+          </a>
+          <a href="/#faq" className="transition-colors hover:text-white">
+            FAQ
+          </a>
+        </nav>
+        <div className="flex items-center gap-3">
+          {userId ? (
+            <>
+              <Link
+                href="/dashboard"
+                className="hidden text-sm text-muted-foreground transition-colors hover:text-white sm:inline"
+              >
+                Dashboard
+              </Link>
+              <UserButton afterSignOutUrl="/" />
+            </>
+          ) : (
+            <>
+              <Link
+                href="/sign-in"
+                className="hidden text-sm text-muted-foreground transition-colors hover:text-white sm:inline"
+              >
+                Sign In
+              </Link>
+              <Link
+                href="/sign-up"
+                className={cn(
+                  buttonVariants({ size: "sm" }),
+                  "rounded-full border border-primary/40 bg-primary/90 px-4 text-primary-foreground shadow-[0_10px_40px_rgba(125,92,255,0.35)] hover:bg-primary"
+                )}
+              >
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>

@@ -1,69 +1,76 @@
-# Design System: ViralClip AI (Violet Theme)
+# Theme System: ViralClip AI
 
-## Overview
-This design system is tailored for a high-performance video processing application. The "Violet" theme conveys creativity, intelligence, and premium AI capabilities. It utilizes glassmorphism for overlays and high-contrast elements for video editing interfaces.
+## Purpose
+This file defines the visual system and AI agent rules for the landing experience of ViralClip AI, an AI-powered long-form to short-form video generator.
 
-## Color Palette (Tailwind CSS v4 Variables)
+## Brand Direction
+- Product name: `ViralClip AI`
+- Positioning: premium AI studio for creators, agencies, and media teams
+- Tone: sharp, cinematic, technical, confident
+- Visual mood: dark control room, neon editorial highlights, premium SaaS clarity
 
-css
-@theme {
-  --color-background: #09090b;
-  --color-foreground: #f8fafc;
+## Theme Tokens
 
-  --color-primary: #7c3aed;
-  --color-primary-foreground: #ffffff;
+### Colors
+- Background: deep charcoal and blue-black surfaces
+- Primary: electric violet for key actions
+- Accent: cyan for motion, analytics, and system signals
+- Highlight: warm amber for ROI, pricing emphasis, and urgency
+- Text: bright neutral white with softened secondary copy
+- Borders: low-contrast luminous lines, never flat gray
 
-  --color-secondary: #1e1b4b;
-  --color-secondary-foreground: #e9d5ff;
+### Typography
+- Sans: `Inter`
+- Heading style: bold, tight, slightly condensed feeling through tracking and sizing
+- Body style: clear, product-focused, compact paragraph widths
+- Numeric emphasis: large mono-like or tabular-feeling layouts for metrics, durations, and pricing
 
-  --color-accent: #d8b4fe;
-  --color-muted: #1e293b;
-  --color-muted-foreground: #94a3b8;
+### Layout
+- Default page background must be dark
+- Sections should use strong horizontal rhythm with generous spacing
+- Content width should stay readable, usually centered around `max-w-6xl` to `max-w-7xl`
+- Use layered panels, gradients, soft borders, and blur instead of flat cards
 
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-destructive: #ef4444;
+### Motion
+- Prefer subtle glow, hover lift, and opacity transitions
+- Avoid exaggerated animation loops
+- Motion should reinforce a tool/product feeling, not a marketing-template feeling
 
-  --color-border: #2e1065;
-  --color-input: #1e1b4b;
+## Component Rules
 
-  --radius-lg: 0.75rem;
-  --radius-md: 0.5rem;
-  --radius-sm: 0.25rem;
-}
+### Header
+- Sticky header with translucent dark surface
+- Include product wordmark, section navigation, and primary CTA
+- Keep nav labels short and task-oriented
 
+### Hero
+- Must communicate core value in one pass:
+  turn long recordings into viral shorts quickly
+- Include:
+  headline, supporting copy, proof points, CTA cluster, and visual/product preview
+- Hero visuals should suggest workflow, analytics, captions, and clip extraction
 
-## Typography
-- **Primary Sans**: `Inter`, system-ui, sans-serif (Used for UI, headings, and body text).
-- **Monospace**: `DM Mono`, monospace (Used for timestamps, JSON responses, and SEO scores).
+### Features
+- Show concrete benefits, not vague AI claims
+- Each feature card should describe an outcome and the mechanism behind it
+- Use icons sparingly but consistently
 
-## Component Specifications
+### Pricing
+- Highlight one recommended plan
+- Emphasize operational value, not only credits
+- Include what happens after upload: transcript, highlights, captions, exports
 
-### 1. Elevated Video Rows
-- **Background**: `rgba(30, 27, 75, 0.4)`
-- **Border**: `1px solid var(--color-border)`
-- **Backdrop Blur**: `12px`
-- **Hover State**: Border shifts to `var(--color-primary)`
+### Footer
+- Include product summary, key navigation, legal placeholders, and concise trust messaging
 
-### 2. Status Badges
-- **Processing**: Violet background, pulsing opacity.
-- **Transcribing**: Blue-sky border with spinning icon.
-- **Ready**: Emerald background, solid white text.
-- **Failed**: Red/Destructive outline.
-
-### 3. Video Segment Cards
-- Used for displaying Gemini-identified highlights.
-- **SEO Score Display**: Large `DM Mono` number in the top-right corner.
-- **Reasoning Text**: Muted-foreground with a smaller font size.
-
-### 4. Progress Indicators
-- **Track**: `var(--color-muted)`
-- **Indicator**: Linear gradient from `var(--color-primary)` to `#c084fc`.
-
-## Icons & Imagery
-- Use **Lucide React** for consistent, thin-stroke iconography.
-- Loading states should use custom SVG animations reflecting video frames or sound waves.
-
-## Layout Principles
-- **Dashboard Grid**: Sidebar-driven layout for desktop, bottom-bar for mobile.
-- **Workspace**: 60/40 split between Video Preview and Transcript/Segments list.
+## Agent Rules For Future UI Work
+- Always preserve dark theme as the default experience unless the user explicitly asks otherwise.
+- Do not introduce generic white backgrounds for primary sections.
+- Prefer cinematic gradients, glass panels, and layered depth over plain boxed layouts.
+- Keep branding consistent as `ViralClip AI`.
+- Hero copy should stay product-specific to video repurposing, not generic AI automation.
+- Pricing, CTA, and feature sections should clearly target creators, teams, and agencies.
+- When adding new sections, maintain the existing color token family instead of inventing unrelated hues.
+- Use existing ShadCN-style local components where practical, but do not force components that weaken the visual direction.
+- Avoid filler testimonials or fake company logos unless the user explicitly requests them.
+- Any dashboard-like preview should feel plausible for a real video workflow: upload, transcript, highlight selection, render, export.
