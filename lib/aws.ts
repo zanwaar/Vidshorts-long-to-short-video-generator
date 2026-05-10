@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 
 import {
   GetObjectCommand,
@@ -130,6 +130,58 @@ export async function createSignedVideoViewUrl(input: {
     }),
     { expiresIn: S3_VIEW_EXPIRATION_SECONDS }
   );
+}
+
+function toWebReadableStream(body: unknown) {
+  if (!body) {
+    throw new Error("Uploaded video body is empty.");
+  }
+
+  if (
+    typeof body === "object" &&
+    "transformToWebStream" in body &&
+    typeof body.transformToWebStream === "function"
+  ) {
+    return body.transformToWebStream() as ReadableStream<Uint8Array>;
+  }
+
+  if (body instanceof Readable) {
+    return Readable.toWeb(body) as ReadableStream<Uint8Array>;
+  }
+
+  if (typeof body === "object" && "getReader" in body) {
+    return body as ReadableStream<Uint8Array>;
+  }
+
+  if (
+    typeof body === "object" &&
+    "stream" in body &&
+    typeof body.stream === "function"
+  ) {
+    return body.stream() as ReadableStream<Uint8Array>;
+  }
+
+  throw new Error("Uploaded video body could not be converted into a readable stream.");
+}
+
+export async function getVideoObjectStream(input: {
+  bucket: string;
+  objectKey: string;
+}) {
+  const client = createS3Client();
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: input.bucket,
+      Key: input.objectKey,
+    })
+  );
+
+  return {
+    body: toWebReadableStream(response.Body),
+    contentType: response.ContentType ?? null,
+    contentLength:
+      typeof response.ContentLength === "number" ? response.ContentLength : null,
+  };
 }
 
 export async function assertVideoObjectExists(input: {

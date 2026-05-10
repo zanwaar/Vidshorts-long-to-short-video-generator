@@ -70,13 +70,21 @@ export function getProjectStepMessage(status: ProjectStatus, progress: number) {
 
       return "Uploading source video in background";
     case "uploaded":
-      return "Upload complete";
+      return "Upload complete. Ready for AI analysis";
     case "processing":
-      return "Queued for the clipping workflow";
+      if (progress >= 88) {
+        return "Saving transcript and generated captions";
+      }
+
+      if (progress >= 72) {
+        return "Transcribing full video with Deepgram";
+      }
+
+      return "Queued for AI transcription";
     case "completed":
-      return "Project ready";
+      return "Transcript and captions ready";
     case "failed":
-      return "Upload failed";
+      return "Workflow failed";
     default:
       return "Waiting to start";
   }

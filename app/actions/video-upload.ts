@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
 import { auth } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
@@ -29,6 +30,10 @@ const failUploadSchema = z.object({
   error: z.string().trim().min(1).max(255),
 });
 
+const startAnalysisSchema = z.object({
+  projectId: z.string().uuid(),
+});
+
 async function stageUploadFile(file: File) {
   const stagedDirectory = path.join(os.tmpdir(), "vidshorts-upload-staging");
   const stagedFilePath = path.join(
@@ -38,7 +43,7 @@ async function stageUploadFile(file: File) {
 
   await mkdir(stagedDirectory, { recursive: true });
   await pipeline(
-    Readable.fromWeb(file.stream() as globalThis.ReadableStream),
+    Readable.fromWeb(file.stream() as WebReadableStream),
     createWriteStream(stagedFilePath)
   );
 
@@ -184,5 +189,83 @@ export async function failVideoUploadAction(input: unknown) {
   } catch (error) {
     console.error("Failed to mark upload as failed", error);
     return { success: false, error: "Unable to update upload failure state." };
+  }
+}
+
+export async function startVideoAnalysisAction(input: unknown) {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const values = startAnalysisSchema.parse(input);
+
+    const [project] = await db
+      .select({
+        projectId: projects.id,
+        status: projects.status,
+        uploadProgress: projects.uploadProgress,
+        videoId: videos.id,
+        s3Bucket: videos.s3Bucket,
+        s3Key: videos.s3Key,
+      })
+      .from(projects)
+      .leftJoin(videos, eq(videos.projectId, projects.id))
+      .where(
+        and(eq(projects.id, values.projectId), eq(projects.clerkUserId, userId))
+      )
+      .limit(1);
+
+    if (!project?.videoId) {
+      return { success: false, error: "Project not found." };
+    }
+
+    if (!project.s3Bucket || !project.s3Key) {
+      return {
+        success: false,
+        error: "Finish the source upload before running AI analysis.",
+      };
+    }
+
+    if (project.status === "processing") {
+      return { success: true, projectId: project.projectId, alreadyStarted: true };
+    }
+
+    await inngest.send({
+      name: "video/analysis.requested",
+      data: {
+        projectId: project.projectId,
+        videoId: project.videoId,
+        clerkUserId: userId,
+      },
+    });
+
+    await db
+      .update(projects)
+      .set({
+        status: "processing",
+        uploadProgress: Math.max(project.uploadProgress, 55),
+        statusMessage: "Queued AI analysis with Inngest",
+        updatedAt: new Date(),
+      })
+      .where(eq(projects.id, project.projectId));
+
+    await db
+      .update(videos)
+      .set({
+        status: "processing",
+        updatedAt: new Date(),
+      })
+      .where(eq(videos.id, project.videoId));
+
+    revalidatePath("/dashboard");
+    revalidatePath(`/dashboard/projects/${project.projectId}`);
+
+    return { success: true, projectId: project.projectId };
+  } catch (error) {
+    console.error("Failed to start video analysis", error);
+    return { success: false, error: "Unable to start AI analysis." };
   }
 }

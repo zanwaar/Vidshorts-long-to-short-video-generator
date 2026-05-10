@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
 import { ArrowUpRight, Sparkles, WandSparkles } from "lucide-react";
+import Link from "next/link";
 
 import { VideoUploadHero } from "@/components/dashboard/video-upload-hero";
 import { Badge } from "@/components/ui/badge";
@@ -98,6 +99,12 @@ export default async function DashboardPage() {
                       <span className="text-sm text-white/60">
                         {project.uploadProgress}% complete
                       </span>
+                      <Link
+                        href={`/dashboard/projects/${project.id}`}
+                        className="text-sm font-medium text-primary transition hover:text-primary/80"
+                      >
+                        Open
+                      </Link>
                     </div>
                   </div>
                 </div>
@@ -136,12 +143,12 @@ export default async function DashboardPage() {
                   AI next step
                 </div>
                 <h3 className="mt-3 text-xl font-semibold text-white">
-                  Upload projects now prepare signed S3 targets with Inngest.
+                  Upload now flows into a transcript-first project workspace.
                 </h3>
                 <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  The current flow creates a project row, polls DB-backed status,
-                  and stores the signed upload and view URLs once the workflow is
-                  ready.
+                  Each project keeps upload progress, AI analysis state, and the
+                  returned transcript in one place so the next clip-generation
+                  stages have a stable source of truth.
                 </p>
               </div>
               <ArrowUpRight className="mt-1 hidden size-5 text-accent sm:block" />
@@ -156,9 +163,9 @@ export default async function DashboardPage() {
             <div className="mt-5 space-y-3">
               {[
                 "Select a source video and create a project record",
-                "Let Inngest prepare the signed S3 upload target",
-                "Upload the source asset and persist progress to the DB",
-                "Use the returned signed URL to review the uploaded source",
+                "Let Inngest upload the source asset to S3 in the background",
+                "Open the project workflow page and monitor each step live",
+                "Run AI analysis to generate the transcript and captions",
               ].map((item, index) => (
                 <div
                   key={item}

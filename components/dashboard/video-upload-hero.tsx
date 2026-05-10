@@ -230,7 +230,7 @@ export function VideoUploadHero() {
         setUploadState("preparing_upload");
         setProgress(5);
         setStatusMessage("Queued background upload with Inngest");
-        router.refresh();
+        router.push(`/dashboard/projects/${result.projectId}`);
       })();
     });
   }
