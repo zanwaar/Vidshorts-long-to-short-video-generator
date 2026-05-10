@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import {
+  AlertTriangle,
   CircleCheckBig,
   Clock3,
   Film,
@@ -12,7 +20,9 @@ import {
   Upload,
   Video,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
+import { createUploadProjectAction } from "@/app/actions/video-upload";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -27,11 +37,33 @@ import {
   ProgressLabel,
   ProgressValue,
 } from "@/components/ui/progress";
+import {
+  getProjectStatusLabel,
+  getProjectStepMessage,
+  type ProjectStatus,
+} from "@/lib/project-upload";
 import { cn } from "@/lib/utils";
 
-type UploadState = "idle" | "uploading" | "complete";
+type UploadState = "idle" | ProjectStatus;
+
+type UploadStatusPayload = {
+  projectId: string;
+  videoId: string | null;
+  title: string;
+  sourceFileName: string;
+  status: ProjectStatus;
+  uploadProgress: number;
+  statusMessage: string | null;
+  uploadUrl: string | null;
+  uploadFields: Record<string, string> | null;
+  signedViewUrl: string | null;
+  s3Url: string | null;
+  s3Key: string | null;
+};
 
 const acceptedFormats = ["MP4", "MOV", "AVI", "WebM"];
+const idleMessage = "Select a long-form video to begin the upload workflow";
+const activeUploadStates: UploadState[] = ["creating", "preparing_upload", "uploading"];
 
 function formatFileSize(size: number) {
   if (size < 1024 * 1024) {
@@ -45,32 +77,37 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function getProgressMessage(progress: number, state: UploadState) {
-  if (state === "complete") {
-    return "Upload complete";
+function getUploadBadgeClassName(state: UploadState) {
+  if (state === "failed") {
+    return "text-rose-300";
   }
 
-  if (progress < 15) {
-    return "Preparing secure upload";
+  if (state === "uploaded" || state === "completed") {
+    return "text-emerald-300";
   }
 
-  if (progress < 60) {
-    return "Transferring video to workspace";
+  if (state === "uploading") {
+    return "text-sky-200";
   }
 
-  if (progress < 95) {
-    return "Finalizing source asset";
-  }
-
-  return "Wrapping up upload";
+  return "text-white/70";
 }
 
 export function VideoUploadHero() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [uploadedPreviewOpen, setUploadedPreviewOpen] = useState(false);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState(idleMessage);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [signedViewUrl, setSignedViewUrl] = useState<string | null>(null);
+  const [s3Url, setS3Url] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const previewUrl = useMemo(() => {
     if (!selectedFile) {
@@ -88,37 +125,67 @@ export function VideoUploadHero() {
     };
   }, [previewUrl]);
 
-  const advanceUpload = useEffectEvent(() => {
-    setProgress((currentProgress) => {
-      if (currentProgress >= 100) {
-        setUploadState("complete");
-        return 100;
-      }
-
-      const nextProgress = currentProgress + Math.floor(Math.random() * 12) + 7;
-
-      if (nextProgress >= 100) {
-        setUploadState("complete");
-        return 100;
-      }
-
-      return nextProgress;
-    });
-  });
-
-  useEffect(() => {
-    if (uploadState !== "uploading") {
+  const pollProjectStatus = useEffectEvent(async () => {
+    if (!projectId) {
       return;
     }
 
+    const response = await fetch(`/api/projects/${projectId}/upload-status`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = (await response.json()) as UploadStatusPayload;
+    const nextMessage =
+      payload.statusMessage ??
+      getProjectStepMessage(payload.status, payload.uploadProgress);
+
+    setUploadState(payload.status);
+    setProgress(payload.uploadProgress);
+    setStatusMessage(nextMessage);
+    setS3Url(payload.s3Url);
+    setSignedViewUrl(payload.signedViewUrl);
+
+    if (payload.status === "failed") {
+      setErrorMessage(nextMessage);
+    }
+  });
+
+  useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+
+    if (!activeUploadStates.includes(uploadState)) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void pollProjectStatus();
+    }, 0);
+
     const interval = window.setInterval(() => {
-      advanceUpload();
-    }, 360);
+      void pollProjectStatus();
+    }, 1500);
 
     return () => {
+      window.clearTimeout(timeout);
       window.clearInterval(interval);
     };
-  }, [uploadState]);
+  }, [projectId, uploadState]);
+
+  function resetUploadSession() {
+    setProjectId(null);
+    setS3Url(null);
+    setSignedViewUrl(null);
+    setErrorMessage(null);
+    setUploadState("idle");
+    setProgress(0);
+    setStatusMessage(idleMessage);
+  }
 
   function handleSelectFile(file: File | null) {
     if (!file) {
@@ -126,8 +193,7 @@ export function VideoUploadHero() {
     }
 
     setSelectedFile(file);
-    setUploadState("idle");
-    setProgress(0);
+    resetUploadSession();
   }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -135,15 +201,48 @@ export function VideoUploadHero() {
   }
 
   function handleUploadClick() {
-    if (!selectedFile || uploadState === "uploading") {
+    if (!selectedFile || activeUploadStates.includes(uploadState) || isPending) {
       return;
     }
 
-    setUploadState("uploading");
-    setProgress(4);
+    setErrorMessage(null);
+    setS3Url(null);
+    setSignedViewUrl(null);
+    setUploadState("creating");
+    setProgress(1);
+    setStatusMessage("Staging source video for background upload");
+
+    startTransition(() => {
+      void (async () => {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+
+        const result = await createUploadProjectAction(formData);
+
+        if (!result.success || !result.projectId) {
+          setUploadState("failed");
+          setErrorMessage(result.error ?? "Unable to create the upload project.");
+          setStatusMessage(result.error ?? "Unable to create the upload project.");
+          return;
+        }
+
+        setProjectId(result.projectId);
+        setUploadState("preparing_upload");
+        setProgress(5);
+        setStatusMessage("Queued background upload with Inngest");
+        router.refresh();
+      })();
+    });
   }
 
-  const uploadMessage = getProgressMessage(progress, uploadState);
+  const uploadMessage =
+    uploadState === "idle"
+      ? idleMessage
+      : statusMessage || getProjectStepMessage(uploadState, progress);
+  const isUploadActive = activeUploadStates.includes(uploadState) || isPending;
+  const badgeLabel =
+    uploadState === "idle" ? "Waiting" : getProjectStatusLabel(uploadState);
+  const uploadedViewUrl = signedViewUrl ?? s3Url;
 
   return (
     <>
@@ -164,26 +263,26 @@ export function VideoUploadHero() {
             </h1>
 
             <p className="mt-4 max-w-xl text-sm leading-7 text-white/68 md:text-base">
-              Start from a local file, review the source before it goes up, and
-              keep the upload flow visible from the first click.
+              Each upload stages the source on the server, then Inngest pushes the
+              actual file to AWS S3 and keeps progress visible while it runs.
             </p>
 
             <div className="mt-7 grid gap-3 sm:grid-cols-3">
               {[
                 {
                   icon: HardDriveUpload,
-                  label: "Local source",
-                  detail: "Pick directly from your device",
+                  label: "Project first",
+                  detail: "Every upload starts with a tracked project ID",
                 },
                 {
                   icon: Play,
-                  label: "Instant preview",
-                  detail: "Check framing before upload",
+                  label: "Inngest upload",
+                  detail: "The background job performs the AWS S3 upload",
                 },
                 {
                   icon: Sparkles,
                   label: "Pipeline ready",
-                  detail: "Prepared for clipping workflow",
+                  detail: "Uploaded sources are ready for the next workflow",
                 },
               ].map((item) => {
                 const Icon = item.icon;
@@ -220,14 +319,10 @@ export function VideoUploadHero() {
                   variant="outline"
                   className={cn(
                     "border-white/10 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-[0.2em]",
-                    uploadState === "complete" ? "text-emerald-300" : "text-white/70"
+                    getUploadBadgeClassName(uploadState)
                   )}
                 >
-                  {uploadState === "uploading"
-                    ? "Uploading"
-                    : uploadState === "complete"
-                      ? "Uploaded"
-                      : "Waiting"}
+                  {badgeLabel}
                 </Badge>
               </div>
 
@@ -249,8 +344,8 @@ export function VideoUploadHero() {
                       Choose a long-form source video
                     </h3>
                     <p className="mt-3 max-w-sm text-sm leading-6 text-white/58">
-                      Select a file from your computer to prepare the upload
-                      preview and source details.
+                      Select a file from your computer to create a project, queue the
+                      Inngest upload, and track the progress end to end.
                     </p>
 
                     <Button
@@ -300,6 +395,11 @@ export function VideoUploadHero() {
                         <p className="mt-3 line-clamp-2 text-lg font-medium text-white">
                           {selectedFile.name}
                         </p>
+                        {projectId ? (
+                          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-white/42">
+                            Project ID {projectId}
+                          </p>
+                        ) : null}
                       </div>
 
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
@@ -340,7 +440,7 @@ export function VideoUploadHero() {
                           size="lg"
                           className="rounded-full border-white/12 bg-white/5 px-5 text-white hover:bg-white/8"
                           onClick={() => inputRef.current?.click()}
-                          disabled={uploadState === "uploading"}
+                          disabled={isUploadActive}
                         >
                           <Video className="size-4" />
                           Replace
@@ -349,26 +449,47 @@ export function VideoUploadHero() {
                         <button
                           type="button"
                           onClick={handleUploadClick}
-                          disabled={uploadState === "uploading"}
+                          disabled={isUploadActive}
                           className={cn(
                             buttonVariants({ size: "lg" }),
                             "rounded-full border border-primary/40 px-5",
-                            uploadState === "complete" && "bg-emerald-500 hover:bg-emerald-500"
+                            (uploadState === "uploaded" || uploadState === "completed") &&
+                              "bg-emerald-500 hover:bg-emerald-500",
+                            uploadState === "failed" && "bg-rose-500 hover:bg-rose-500"
                           )}
                         >
-                          {uploadState === "uploading" ? (
+                          {isUploadActive ? (
                             <LoaderCircle className="size-4 animate-spin" />
-                          ) : uploadState === "complete" ? (
+                          ) : uploadState === "uploaded" || uploadState === "completed" ? (
                             <CircleCheckBig className="size-4" />
+                          ) : uploadState === "failed" ? (
+                            <AlertTriangle className="size-4" />
                           ) : (
                             <Upload className="size-4" />
                           )}
-                          {uploadState === "uploading"
+                          {isUploadActive
                             ? "Uploading..."
-                            : uploadState === "complete"
+                            : uploadState === "uploaded" || uploadState === "completed"
                               ? "Uploaded"
-                              : "Upload video"}
+                              : uploadState === "failed"
+                                ? "Upload again"
+                                : "Upload video"}
                         </button>
+
+                        {uploadedViewUrl ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="lg"
+                            onClick={() => setUploadedPreviewOpen(true)}
+                            className={cn(
+                              "rounded-full border-white/12 bg-white/5 px-5 text-white hover:bg-white/8"
+                            )}
+                          >
+                            <Play className="size-4" />
+                            View upload
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -394,9 +515,14 @@ export function VideoUploadHero() {
                 </Progress>
 
                 <p className="mt-3 text-sm text-white/50">
-                  UI-only simulation for now. This progress state is ready to be
-                  wired into the real upload action next.
+                  {projectId
+                    ? `Project ${projectId} is the source of truth for polling and workflow updates.`
+                    : "Choose a source video, then the upload button will queue the Inngest S3 job."}
                 </p>
+
+                {errorMessage ? (
+                  <p className="mt-3 text-sm text-rose-300">{errorMessage}</p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -417,6 +543,33 @@ export function VideoUploadHero() {
               <video
                 key={`${previewUrl}-dialog`}
                 src={previewUrl}
+                controls
+                preload="metadata"
+                className="aspect-video w-full bg-black"
+              />
+            ) : (
+              <div className="flex aspect-video items-center justify-center">
+                <Video className="size-8 text-white/40" />
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={uploadedPreviewOpen} onOpenChange={setUploadedPreviewOpen}>
+        <DialogContent className="max-w-4xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,18,26,0.98),rgba(14,14,20,0.98))] p-5 text-white sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-xl text-white">Uploaded Video</DialogTitle>
+            <DialogDescription className="text-white/55">
+              Tampilkan hasil upload langsung di player, bukan download file.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-black">
+            {uploadedViewUrl ? (
+              <video
+                key={`${uploadedViewUrl}-dialog`}
+                src={uploadedViewUrl}
                 controls
                 preload="metadata"
                 className="aspect-video w-full bg-black"

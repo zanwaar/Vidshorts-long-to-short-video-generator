@@ -25,18 +25,18 @@ export default async function Navbar() {
           </span>
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-          <a href="/#features" className="transition-colors hover:text-white">
+          <Link href="/#features" className="transition-colors hover:text-white">
             Features
-          </a>
-          <a href="/#workflow" className="transition-colors hover:text-white">
+          </Link>
+          <Link href="/#workflow" className="transition-colors hover:text-white">
             Workflow
-          </a>
-          <a href="/#pricing" className="transition-colors hover:text-white">
+          </Link>
+          <Link href="/#pricing" className="transition-colors hover:text-white">
             Pricing
-          </a>
-          <a href="/#faq" className="transition-colors hover:text-white">
+          </Link>
+          <Link href="/#faq" className="transition-colors hover:text-white">
             FAQ
-          </a>
+          </Link>
         </nav>
         <div className="flex items-center gap-3">
           {userId ? (
@@ -47,7 +47,7 @@ export default async function Navbar() {
               >
                 Dashboard
               </Link>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton />
             </>
           ) : (
             <>

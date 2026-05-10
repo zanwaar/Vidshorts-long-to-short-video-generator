@@ -84,7 +84,7 @@ export default async function DashboardLayout({
             <div className="border-t border-white/10 p-4">
               <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-4">
                 <div className="flex items-center gap-3">
-                  <UserButton afterSignOutUrl="/" />
+                  <UserButton />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-white">
                       {firstName}
