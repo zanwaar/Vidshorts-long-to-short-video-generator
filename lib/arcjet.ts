@@ -46,7 +46,7 @@ export const uploadActionArcjet = arcjet({
       mode: "LIVE",
       characteristics: ["userId"],
       window: "10m",
-      max: 4,
+      max: 100,
     }),
   ],
 });
@@ -59,7 +59,7 @@ export const analysisActionArcjet = arcjet({
       mode: "LIVE",
       characteristics: ["userId"],
       window: "15m",
-      max: 6,
+      max: 100,
     }),
   ],
 });

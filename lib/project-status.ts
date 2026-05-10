@@ -1,7 +1,13 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
-import { projects, shortVideos, transcripts, videos } from "@/db/schema";
+import {
+  projects,
+  shortVideoCaptions,
+  shortVideos,
+  transcripts,
+  videos,
+} from "@/db/schema";
 import type { ProjectStatus } from "@/lib/project-upload";
 
 type CaptionCue = {
@@ -11,6 +17,13 @@ type CaptionCue = {
   text: string;
   speaker: number | null;
 };
+
+type ShortVideoStatus =
+  | "pending"
+  | "clipping"
+  | "rendering"
+  | "completed"
+  | "failed";
 
 export type ProjectStatusSnapshot = {
   projectId: string;
@@ -35,9 +48,19 @@ export type ProjectStatusSnapshot = {
     title: string;
     startTime: number;
     endTime: number;
+    duration: number;
     seoScore: number;
     reason: string;
     transcriptExcerpt: string;
+    shortClipS3Url: string | null;
+    status: ShortVideoStatus;
+    captions: Array<{
+      cueIndex: number;
+      startTime: number;
+      endTime: number;
+      text: string;
+      speaker: number | null;
+    }>;
   }>;
 };
 
@@ -157,15 +180,63 @@ export async function getProjectStatusSnapshot(input: {
           title: shortVideos.title,
           startTime: shortVideos.startTime,
           endTime: shortVideos.endTime,
+          duration: shortVideos.duration,
           seoScore: shortVideos.seoScore,
           reason: shortVideos.reason,
           transcriptExcerpt: shortVideos.transcriptExcerpt,
+          shortClipS3Url: shortVideos.shortClipS3Url,
+          status: shortVideos.status,
         })
         .from(shortVideos)
         .where(eq(shortVideos.videoId, projectRow.videoId))
         .orderBy(asc(shortVideos.clipIndex))
         .limit(5)
     : [];
+  const shortVideoCaptionRows = shortVideoRows.length
+    ? await db
+        .select({
+          shortVideoId: shortVideoCaptions.shortVideoId,
+          cueIndex: shortVideoCaptions.cueIndex,
+          startTime: shortVideoCaptions.startTime,
+          endTime: shortVideoCaptions.endTime,
+          text: shortVideoCaptions.text,
+          speaker: shortVideoCaptions.speaker,
+        })
+        .from(shortVideoCaptions)
+        .where(
+          inArray(
+            shortVideoCaptions.shortVideoId,
+            shortVideoRows.map((row) => row.id)
+          )
+        )
+        .orderBy(
+          asc(shortVideoCaptions.shortVideoId),
+          asc(shortVideoCaptions.cueIndex)
+        )
+    : [];
+  const shortVideoCaptionsById = shortVideoCaptionRows.reduce<
+    Record<
+      string,
+      Array<{
+        cueIndex: number;
+        startTime: number;
+        endTime: number;
+        text: string;
+        speaker: number | null;
+      }>
+    >
+  >((accumulator, cue) => {
+    accumulator[cue.shortVideoId] ??= [];
+    accumulator[cue.shortVideoId].push({
+      cueIndex: cue.cueIndex,
+      startTime: cue.startTime,
+      endTime: cue.endTime,
+      text: cue.text,
+      speaker: cue.speaker,
+    });
+
+    return accumulator;
+  }, {});
 
   return {
     projectId: projectRow.projectId,
@@ -190,9 +261,13 @@ export async function getProjectStatusSnapshot(input: {
       title: row.title,
       startTime: row.startTime,
       endTime: row.endTime,
+      duration: row.duration,
       seoScore: row.seoScore,
       reason: row.reason,
       transcriptExcerpt: row.transcriptExcerpt,
+      shortClipS3Url: row.shortClipS3Url,
+      status: row.status,
+      captions: shortVideoCaptionsById[row.id] ?? [],
     })),
   } satisfies ProjectStatusSnapshot;
 }

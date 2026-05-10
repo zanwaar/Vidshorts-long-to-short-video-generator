@@ -18,7 +18,7 @@ const shortVideoSelectionClipSchema = z.object({
 const shortVideoSelectionResponseSchema = z.object({
   clips: z
     .array(shortVideoSelectionClipSchema)
-    .min(shortVideoGenerationConfig.candidateCount)
+    .min(1)
     .max(shortVideoGenerationConfig.candidateCount),
 });
 
@@ -63,7 +63,7 @@ const geminiResponseJsonSchema = {
   properties: {
     clips: {
       type: "array",
-      minItems: shortVideoGenerationConfig.candidateCount,
+      minItems: 1,
       maxItems: shortVideoGenerationConfig.candidateCount,
       items: {
         type: "object",
@@ -157,36 +157,55 @@ function normalizeClips(
     }));
 
   const seenWindows = new Set<string>();
+  const validClips: ShortVideoSelectionClip[] = [];
 
   for (const clip of sortedClips) {
+    const windowKey = `${clip.startTime}:${clip.endTime}`;
+
     if (clip.endTime <= clip.startTime) {
-      throw new Error("AI returned a clip whose end time is not after start time.");
+      console.warn(
+        `Skipping AI clip with invalid window ${windowKey}: end time is not after start time.`
+      );
+      continue;
     }
 
     const clipDuration = clip.endTime - clip.startTime;
 
     if (clipDuration < shortVideoGenerationConfig.minDurationSeconds) {
-      throw new Error("AI returned a clip shorter than the configured minimum.");
+      console.warn(
+        `Skipping AI clip ${windowKey}: duration ${clipDuration.toFixed(2)}s is shorter than the minimum ${shortVideoGenerationConfig.minDurationSeconds}s.`
+      );
+      continue;
     }
 
     if (clipDuration > shortVideoGenerationConfig.maxDurationSeconds) {
-      throw new Error("AI returned a clip longer than the configured maximum.");
+      console.warn(
+        `Skipping AI clip ${windowKey}: duration ${clipDuration.toFixed(2)}s is longer than the maximum ${shortVideoGenerationConfig.maxDurationSeconds}s.`
+      );
+      continue;
     }
 
     if (duration !== null && clip.endTime > duration + 0.5) {
-      throw new Error("AI returned a clip that exceeds the video duration.");
+      console.warn(
+        `Skipping AI clip ${windowKey}: end time exceeds the source video duration.`
+      );
+      continue;
     }
 
-    const windowKey = `${clip.startTime}:${clip.endTime}`;
-
     if (seenWindows.has(windowKey)) {
-      throw new Error("AI returned duplicate clip windows.");
+      console.warn(`Skipping duplicate AI clip window ${windowKey}.`);
+      continue;
     }
 
     seenWindows.add(windowKey);
+    validClips.push(clip);
   }
 
-  return sortedClips;
+  if (validClips.length === 0) {
+    throw new Error("AI did not return any valid clip windows.");
+  }
+
+  return validClips;
 }
 
 async function requestDeepSeekJson(systemPrompt: string, userPrompt: string) {
@@ -286,6 +305,40 @@ async function requestGeminiJson(systemPrompt: string, userPrompt: string) {
   };
 }
 
+async function requestProviderJson(
+  provider: ShortVideoAiProvider,
+  systemPrompt: string,
+  userPrompt: string
+) {
+  return provider === "deepseek"
+    ? requestDeepSeekJson(systemPrompt, userPrompt)
+    : requestGeminiJson(systemPrompt, userPrompt);
+}
+
+async function runShortVideoSelectionForProvider(
+  provider: ShortVideoAiProvider,
+  systemPrompt: string,
+  userPrompt: string,
+  duration: number | null
+) {
+  const aiResponse = await requestProviderJson(provider, systemPrompt, userPrompt);
+  const parsedResponse = shortVideoSelectionResponseSchema.parse(
+    JSON.parse(aiResponse.content)
+  );
+
+  if (parsedResponse.clips.length < shortVideoGenerationConfig.candidateCount) {
+    console.warn(
+      `Short-video selection returned ${parsedResponse.clips.length} clips; requested ${shortVideoGenerationConfig.candidateCount}.`
+    );
+  }
+
+  return {
+    provider,
+    model: aiResponse.model,
+    clips: normalizeClips(parsedResponse.clips, duration),
+  };
+}
+
 export async function selectShortVideoMoments(
   input: SelectShortVideoMomentsInput
 ): Promise<ShortVideoSelectionResult> {
@@ -320,20 +373,10 @@ export async function selectShortVideoMoments(
     );
   }
 
-  const provider = shortVideoGenerationConfig.provider;
-
-  const aiResponse =
-    provider === "deepseek"
-      ? await requestDeepSeekJson(systemPrompt, userPrompt)
-      : await requestGeminiJson(systemPrompt, userPrompt);
-
-  const parsedResponse = shortVideoSelectionResponseSchema.parse(
-    JSON.parse(aiResponse.content)
+  return runShortVideoSelectionForProvider(
+    shortVideoGenerationConfig.provider,
+    systemPrompt,
+    userPrompt,
+    input.duration
   );
-
-  return {
-    provider,
-    model: aiResponse.model,
-    clips: normalizeClips(parsedResponse.clips, input.duration),
-  };
 }

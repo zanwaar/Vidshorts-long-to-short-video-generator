@@ -120,7 +120,7 @@ export async function createUploadProjectAction(formData: FormData) {
 
     const dailyUploadCount = await getDailyUploadCount(userId);
 
-    if (dailyUploadCount >= 2) {
+    if (dailyUploadCount >= 20) {
       return {
         success: false,
         error:

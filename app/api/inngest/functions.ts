@@ -111,61 +111,59 @@ async function replaceShortVideoRecords(input: {
   }>;
   captionCues: CaptionCue[];
 }) {
-  await db.transaction(async (tx) => {
-    await tx.delete(shortVideos).where(eq(shortVideos.videoId, input.videoId));
+  await db.delete(shortVideos).where(eq(shortVideos.videoId, input.videoId));
 
-    for (const [index, clip] of input.clips.entries()) {
-      const clipCaptionCues = getCaptionCuesForWindow(
-        input.captionCues,
-        clip.startTime,
-        clip.endTime
-      );
+  for (const [index, clip] of input.clips.entries()) {
+    const clipCaptionCues = getCaptionCuesForWindow(
+      input.captionCues,
+      clip.startTime,
+      clip.endTime
+    );
 
-      const transcriptExcerpt = buildTranscriptExcerpt(clipCaptionCues);
+    const transcriptExcerpt = buildTranscriptExcerpt(clipCaptionCues);
 
-      const [createdShortVideo] = await tx
-        .insert(shortVideos)
-        .values({
-          projectId: input.projectId,
-          videoId: input.videoId,
-          clipIndex: index + 1,
+    const [createdShortVideo] = await db
+      .insert(shortVideos)
+      .values({
+        projectId: input.projectId,
+        videoId: input.videoId,
+        clipIndex: index + 1,
+        title: clip.title,
+        startTime: clip.startTime,
+        endTime: clip.endTime,
+        duration: Number((clip.endTime - clip.startTime).toFixed(2)),
+        reason: clip.reason,
+        seoScore: clip.seoScore,
+        transcriptExcerpt,
+        provider: input.provider,
+        model: input.model,
+        rawJson: {
           title: clip.title,
           startTime: clip.startTime,
           endTime: clip.endTime,
-          duration: Number((clip.endTime - clip.startTime).toFixed(2)),
           reason: clip.reason,
           seoScore: clip.seoScore,
-          transcriptExcerpt,
-          provider: input.provider,
-          model: input.model,
-          rawJson: {
-            title: clip.title,
-            startTime: clip.startTime,
-            endTime: clip.endTime,
-            reason: clip.reason,
-            seoScore: clip.seoScore,
-          },
-        })
-        .returning({
-          id: shortVideos.id,
-        });
+        },
+      })
+      .returning({
+        id: shortVideos.id,
+      });
 
-      if (clipCaptionCues.length === 0) {
-        continue;
-      }
-
-      await tx.insert(shortVideoCaptions).values(
-        clipCaptionCues.map((cue, cueIndex) => ({
-          shortVideoId: createdShortVideo.id,
-          cueIndex: cueIndex + 1,
-          startTime: cue.start,
-          endTime: cue.end,
-          text: cue.text,
-          speaker: cue.speaker,
-        }))
-      );
+    if (clipCaptionCues.length === 0) {
+      continue;
     }
-  });
+
+    await db.insert(shortVideoCaptions).values(
+      clipCaptionCues.map((cue, cueIndex) => ({
+        shortVideoId: createdShortVideo.id,
+        cueIndex: cueIndex + 1,
+        startTime: cue.start,
+        endTime: cue.end,
+        text: cue.text,
+        speaker: cue.speaker,
+      }))
+    );
+  }
 }
 
 export const prepareVideoUpload = inngest.createFunction(
