@@ -4,9 +4,14 @@ import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { syncAuthenticatedUser } from "@/lib/sync-user";
 
 export default async function Navbar() {
   const { userId } = await auth();
+
+  if (userId) {
+    await syncAuthenticatedUser(userId);
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-background/75 backdrop-blur-xl">

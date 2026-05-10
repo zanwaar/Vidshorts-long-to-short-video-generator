@@ -7,6 +7,7 @@ import {
   pgEnum,
   jsonb,
   real,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -24,6 +25,28 @@ export const highlightStatusEnum = pgEnum("highlight_status", [
   "completed",
   "failed",
 ]);
+
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clerkUserId: text("clerk_user_id").notNull(),
+    email: text("email"),
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    username: text("username"),
+    imageUrl: text("image_url"),
+    lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    clerkUserIdIdx: uniqueIndex("users_clerk_user_id_idx").on(table.clerkUserId),
+  })
+);
 
 export const videos = pgTable("videos", {
   id: uuid("id").defaultRandom().primaryKey(),
