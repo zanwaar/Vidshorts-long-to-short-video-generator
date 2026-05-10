@@ -1,7 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { projects, transcripts, videos } from "@/db/schema";
+import { projects, shortVideos, transcripts, videos } from "@/db/schema";
 import type { ProjectStatus } from "@/lib/project-upload";
 
 type CaptionCue = {
@@ -29,6 +29,16 @@ export type ProjectStatusSnapshot = {
   transcriptLanguage: string | null;
   captionCount: number;
   captionPreview: CaptionCue[];
+  shortVideoCount: number;
+  shortVideoPreview: Array<{
+    id: string;
+    title: string;
+    startTime: number;
+    endTime: number;
+    seoScore: number;
+    reason: string;
+    transcriptExcerpt: string;
+  }>;
 };
 
 function normalizeUploadFields(value: unknown) {
@@ -140,6 +150,22 @@ export async function getProjectStatusSnapshot(input: {
 
   const captionPreview = normalizeCaptionPreview(transcriptRow?.rawJson).slice(0, 6);
   const captionCount = getCaptionCount(transcriptRow?.rawJson);
+  const shortVideoRows = projectRow.videoId
+    ? await db
+        .select({
+          id: shortVideos.id,
+          title: shortVideos.title,
+          startTime: shortVideos.startTime,
+          endTime: shortVideos.endTime,
+          seoScore: shortVideos.seoScore,
+          reason: shortVideos.reason,
+          transcriptExcerpt: shortVideos.transcriptExcerpt,
+        })
+        .from(shortVideos)
+        .where(eq(shortVideos.videoId, projectRow.videoId))
+        .orderBy(asc(shortVideos.clipIndex))
+        .limit(5)
+    : [];
 
   return {
     projectId: projectRow.projectId,
@@ -158,5 +184,15 @@ export async function getProjectStatusSnapshot(input: {
     transcriptLanguage: transcriptRow?.language ?? null,
     captionCount,
     captionPreview,
+    shortVideoCount: shortVideoRows.length,
+    shortVideoPreview: shortVideoRows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      startTime: row.startTime,
+      endTime: row.endTime,
+      seoScore: row.seoScore,
+      reason: row.reason,
+      transcriptExcerpt: row.transcriptExcerpt,
+    })),
   } satisfies ProjectStatusSnapshot;
 }

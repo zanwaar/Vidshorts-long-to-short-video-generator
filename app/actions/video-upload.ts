@@ -10,12 +10,17 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
 import { auth } from "@clerk/nextjs/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { projects, videos } from "@/db/schema";
+import {
+  getArcjetErrorMessage,
+  protectAnalysisActionRequest,
+  protectUploadActionRequest,
+} from "@/lib/arcjet";
 import { deriveProjectTitle, sanitizeFileName } from "@/lib/project-upload";
 import { inngest } from "@/lib/inngest";
 
@@ -50,6 +55,35 @@ async function stageUploadFile(file: File) {
   return stagedFilePath;
 }
 
+function getUtcDayRange(now = new Date()) {
+  const start = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+
+  return { start, end };
+}
+
+async function getDailyUploadCount(clerkUserId: string) {
+  const { start, end } = getUtcDayRange();
+
+  const [result] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+    })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.clerkUserId, clerkUserId),
+        gte(projects.createdAt, start),
+        lt(projects.createdAt, end)
+      )
+    );
+
+  return result?.count ?? 0;
+}
+
 export async function createUploadProjectAction(formData: FormData) {
   let createdProjectId: string | null = null;
 
@@ -71,6 +105,28 @@ export async function createUploadProjectAction(formData: FormData) {
       fileSize: file.size,
       contentType: file.type || "video/mp4",
     });
+
+    const decision = await protectUploadActionRequest(userId);
+
+    if (decision.isDenied()) {
+      return {
+        success: false,
+        error: getArcjetErrorMessage(
+          decision,
+          "Upload request blocked by security policy."
+        ),
+      };
+    }
+
+    const dailyUploadCount = await getDailyUploadCount(userId);
+
+    if (dailyUploadCount >= 2) {
+      return {
+        success: false,
+        error:
+          "Daily upload limit reached. You can upload up to 2 videos per UTC day and the limit resets tomorrow.",
+      };
+    }
 
     const stagedFilePath = await stageUploadFile(file);
 
@@ -201,6 +257,17 @@ export async function startVideoAnalysisAction(input: unknown) {
     }
 
     const values = startAnalysisSchema.parse(input);
+    const decision = await protectAnalysisActionRequest(userId);
+
+    if (decision.isDenied()) {
+      return {
+        success: false,
+        error: getArcjetErrorMessage(
+          decision,
+          "AI analysis request blocked by security policy."
+        ),
+      };
+    }
 
     const [project] = await db
       .select({

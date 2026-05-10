@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   CircleDashed,
+  Clapperboard,
   LoaderCircle,
   Sparkles,
   Subtitles,
@@ -59,8 +60,9 @@ function formatCueTime(seconds: number) {
 
 function getWorkflowSteps(snapshot: ProjectStatusSnapshot) {
   const uploadComplete = ["uploaded", "processing", "completed"].includes(snapshot.status);
-  const transcriptComplete = snapshot.status === "completed";
-  const captionsComplete = snapshot.status === "completed";
+  const transcriptComplete = snapshot.captionCount > 0 || snapshot.status === "completed";
+  const captionsComplete = snapshot.captionCount > 0 || snapshot.status === "completed";
+  const highlightsComplete = snapshot.shortVideoCount > 0;
 
   return [
     {
@@ -92,8 +94,14 @@ function getWorkflowSteps(snapshot: ProjectStatusSnapshot) {
     },
     {
       label: "Select highlights",
-      detail: "Next stage for short clips once transcript QA is done.",
-      state: "pending",
+      detail: "Use the transcript to select the best 30 to 90 second short clips.",
+      state: highlightsComplete
+        ? "complete"
+        : snapshot.status === "processing" && snapshot.uploadProgress >= 92
+          ? "active"
+          : captionsComplete
+            ? "pending"
+            : "pending",
     },
     {
       label: "Render shorts",
@@ -363,6 +371,38 @@ export function ProjectWorkflowClient({
               ) : (
                 <div className="flex aspect-video items-center justify-center text-sm text-white/45">
                   The player will appear after the S3 upload is ready.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[1.8rem] border border-white/10 bg-white/[0.04] p-5">
+            <div className="flex items-center gap-2 text-sm font-medium text-white">
+              <Clapperboard className="size-4 text-primary" />
+              Short video suggestions
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {snapshot.shortVideoPreview.length ? (
+                snapshot.shortVideoPreview.map((clip) => (
+                  <div
+                    key={clip.id}
+                    className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4"
+                  >
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/38">
+                      {formatCueTime(clip.startTime)} - {formatCueTime(clip.endTime)} · SEO{" "}
+                      {clip.seoScore}/100
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-white">{clip.title}</p>
+                    <p className="mt-2 text-sm leading-6 text-white/70">{clip.reason}</p>
+                    <p className="mt-3 text-sm leading-6 text-white/52">
+                      {clip.transcriptExcerpt}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-[1.2rem] border border-dashed border-white/10 bg-black/20 p-4 text-sm leading-6 text-white/50">
+                  Run AI analysis to generate short-video candidates from the transcript.
                 </div>
               )}
             </div>

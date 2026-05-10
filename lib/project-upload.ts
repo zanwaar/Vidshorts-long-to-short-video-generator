@@ -72,6 +72,14 @@ export function getProjectStepMessage(status: ProjectStatus, progress: number) {
     case "uploaded":
       return "Upload complete. Ready for AI analysis";
     case "processing":
+      if (progress >= 96) {
+        return "Saving AI-selected short video candidates";
+      }
+
+      if (progress >= 92) {
+        return "Selecting the best short-form moments with AI";
+      }
+
       if (progress >= 88) {
         return "Saving transcript and generated captions";
       }
@@ -82,7 +90,7 @@ export function getProjectStepMessage(status: ProjectStatus, progress: number) {
 
       return "Queued for AI transcription";
     case "completed":
-      return "Transcript and captions ready";
+      return "Transcript, captions, and short suggestions ready";
     case "failed":
       return "Workflow failed";
     default:

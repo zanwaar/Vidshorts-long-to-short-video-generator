@@ -5,10 +5,11 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { projects, transcripts, videos } from "@/db/schema";
+import { projects, shortVideoCaptions, shortVideos, transcripts, videos } from "@/db/schema";
 import { getVideoObjectStream, uploadVideoToS3 } from "@/lib/aws";
-import { transcribeVideoFromStream } from "@/lib/deepgram";
+import { type CaptionCue, transcribeVideoFromStream } from "@/lib/deepgram";
 import { inngest } from "@/lib/inngest";
+import { selectShortVideoMoments } from "@/lib/short-video-selection";
 
 const uploadRequestedEventSchema = z.object({
   projectId: z.string().uuid(),
@@ -77,6 +78,94 @@ async function upsertTranscriptRecord(input: {
     });
 
   return createdTranscript.id;
+}
+
+function getCaptionCuesForWindow(
+  captionCues: CaptionCue[],
+  startTime: number,
+  endTime: number
+) {
+  return captionCues.filter((cue) => cue.end > startTime && cue.start < endTime);
+}
+
+function buildTranscriptExcerpt(captionCues: CaptionCue[]) {
+  return captionCues
+    .map((cue) => cue.text.trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function replaceShortVideoRecords(input: {
+  projectId: string;
+  videoId: string;
+  provider: string;
+  model: string;
+  clips: Array<{
+    title: string;
+    startTime: number;
+    endTime: number;
+    reason: string;
+    seoScore: number;
+  }>;
+  captionCues: CaptionCue[];
+}) {
+  await db.transaction(async (tx) => {
+    await tx.delete(shortVideos).where(eq(shortVideos.videoId, input.videoId));
+
+    for (const [index, clip] of input.clips.entries()) {
+      const clipCaptionCues = getCaptionCuesForWindow(
+        input.captionCues,
+        clip.startTime,
+        clip.endTime
+      );
+
+      const transcriptExcerpt = buildTranscriptExcerpt(clipCaptionCues);
+
+      const [createdShortVideo] = await tx
+        .insert(shortVideos)
+        .values({
+          projectId: input.projectId,
+          videoId: input.videoId,
+          clipIndex: index + 1,
+          title: clip.title,
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+          duration: Number((clip.endTime - clip.startTime).toFixed(2)),
+          reason: clip.reason,
+          seoScore: clip.seoScore,
+          transcriptExcerpt,
+          provider: input.provider,
+          model: input.model,
+          rawJson: {
+            title: clip.title,
+            startTime: clip.startTime,
+            endTime: clip.endTime,
+            reason: clip.reason,
+            seoScore: clip.seoScore,
+          },
+        })
+        .returning({
+          id: shortVideos.id,
+        });
+
+      if (clipCaptionCues.length === 0) {
+        continue;
+      }
+
+      await tx.insert(shortVideoCaptions).values(
+        clipCaptionCues.map((cue, cueIndex) => ({
+          shortVideoId: createdShortVideo.id,
+          cueIndex: cueIndex + 1,
+          startTime: cue.start,
+          endTime: cue.end,
+          text: cue.text,
+          speaker: cue.speaker,
+        }))
+      );
+    }
+  });
 }
 
 export const prepareVideoUpload = inngest.createFunction(
@@ -334,11 +423,49 @@ export const runVideoAnalysis = inngest.createFunction(
             })
             .where(eq(videos.id, payload.videoId));
 
+          await db
+            .update(projects)
+            .set({
+              status: "processing",
+              uploadProgress: 92,
+              statusMessage: "Selecting the best short-form moments with AI",
+              updatedAt: new Date(),
+            })
+            .where(eq(projects.id, payload.projectId));
+
+          const shortVideoSelectionResult = await selectShortVideoMoments({
+            clerkUserId: payload.clerkUserId,
+            transcriptText: transcriptResult.fullText,
+            transcriptLanguage: transcriptResult.language,
+            duration: transcriptResult.duration,
+            captionCues: transcriptResult.captions.cues,
+          });
+
+          await db
+            .update(projects)
+            .set({
+              status: "processing",
+              uploadProgress: 96,
+              statusMessage: "Saving AI-selected short video candidates",
+              updatedAt: new Date(),
+            })
+            .where(eq(projects.id, payload.projectId));
+
+          await replaceShortVideoRecords({
+            projectId: payload.projectId,
+            videoId: payload.videoId,
+            provider: shortVideoSelectionResult.provider,
+            model: shortVideoSelectionResult.model,
+            clips: shortVideoSelectionResult.clips,
+            captionCues: transcriptResult.captions.cues,
+          });
+
           return {
             transcriptText: transcriptResult.fullText,
             transcriptLanguage: transcriptResult.language,
             captionCount: transcriptResult.captions.cues.length,
             captionsVtt: transcriptResult.captions.vtt,
+            shortVideoCount: shortVideoSelectionResult.clips.length,
           };
         }
       );
@@ -349,7 +476,7 @@ export const runVideoAnalysis = inngest.createFunction(
           .set({
             status: "completed",
             uploadProgress: 100,
-            statusMessage: "Transcript and captions are ready",
+            statusMessage: "Transcript, captions, and short suggestions are ready",
             updatedAt: new Date(),
           })
           .where(eq(projects.id, payload.projectId));
@@ -370,13 +497,14 @@ export const runVideoAnalysis = inngest.createFunction(
         transcriptLanguage: analysisResult.transcriptLanguage,
         captionCount: analysisResult.captionCount,
         captionsVtt: analysisResult.captionsVtt,
+        shortVideoCount: analysisResult.shortVideoCount,
       };
     } catch (error) {
       await db
         .update(projects)
         .set({
           status: "failed",
-          statusMessage: "Deepgram transcription failed",
+          statusMessage: "AI transcription or short-video selection failed",
           updatedAt: new Date(),
         })
         .where(

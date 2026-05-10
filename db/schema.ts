@@ -38,6 +38,14 @@ export const highlightStatusEnum = pgEnum("highlight_status", [
   "failed",
 ]);
 
+export const shortVideoStatusEnum = pgEnum("short_video_status", [
+  "pending",
+  "clipping",
+  "rendering",
+  "completed",
+  "failed",
+]);
+
 export const users = pgTable(
   "users",
   {
@@ -115,6 +123,65 @@ export const transcripts = pgTable("transcripts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const shortVideos = pgTable(
+  "short_videos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    videoId: uuid("video_id")
+      .references(() => videos.id, { onDelete: "cascade" })
+      .notNull(),
+    clipIndex: integer("clip_index").notNull(),
+    title: text("title").notNull(),
+    startTime: real("start_time").notNull(),
+    endTime: real("end_time").notNull(),
+    duration: real("duration").notNull(),
+    reason: text("reason").notNull(),
+    seoScore: integer("seo_score").notNull(),
+    transcriptExcerpt: text("transcript_excerpt").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    rawJson: jsonb("raw_json"),
+    shortClipS3Url: text("short_clip_s3_url"),
+    status: shortVideoStatusEnum("status").default("pending").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    videoClipIndexIdx: uniqueIndex("short_videos_video_clip_index_idx").on(
+      table.videoId,
+      table.clipIndex
+    ),
+  })
+);
+
+export const shortVideoCaptions = pgTable(
+  "short_video_captions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    shortVideoId: uuid("short_video_id")
+      .references(() => shortVideos.id, { onDelete: "cascade" })
+      .notNull(),
+    cueIndex: integer("cue_index").notNull(),
+    startTime: real("start_time").notNull(),
+    endTime: real("end_time").notNull(),
+    text: text("text").notNull(),
+    speaker: integer("speaker"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    shortVideoCueIndexIdx: uniqueIndex("short_video_captions_short_video_cue_idx").on(
+      table.shortVideoId,
+      table.cueIndex
+    ),
+  })
+);
+
 export const highlights = pgTable("highlights", {
   id: uuid("id").defaultRandom().primaryKey(),
   videoId: uuid("video_id")
@@ -135,6 +202,7 @@ export const highlights = pgTable("highlights", {
 // Relations
 export const projectsRelations = relations(projects, ({ many }) => ({
   videos: many(videos),
+  shortVideos: many(shortVideos),
 }));
 
 export const videosRelations = relations(videos, ({ many, one }) => ({
@@ -143,6 +211,7 @@ export const videosRelations = relations(videos, ({ many, one }) => ({
     references: [projects.id],
   }),
   highlights: many(highlights),
+  shortVideos: many(shortVideos),
   transcript: one(transcripts, {
     fields: [videos.id],
     references: [transcripts.videoId],
@@ -155,6 +224,28 @@ export const transcriptsRelations = relations(transcripts, ({ one }) => ({
     references: [videos.id],
   }),
 }));
+
+export const shortVideosRelations = relations(shortVideos, ({ many, one }) => ({
+  project: one(projects, {
+    fields: [shortVideos.projectId],
+    references: [projects.id],
+  }),
+  video: one(videos, {
+    fields: [shortVideos.videoId],
+    references: [videos.id],
+  }),
+  captions: many(shortVideoCaptions),
+}));
+
+export const shortVideoCaptionsRelations = relations(
+  shortVideoCaptions,
+  ({ one }) => ({
+    shortVideo: one(shortVideos, {
+      fields: [shortVideoCaptions.shortVideoId],
+      references: [shortVideos.id],
+    }),
+  })
+);
 
 export const highlightsRelations = relations(highlights, ({ one }) => ({
   video: one(videos, {

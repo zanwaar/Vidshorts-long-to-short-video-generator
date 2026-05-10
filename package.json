@@ -11,6 +11,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@arcjet/next": "^1.4.0",
     "@aws-sdk/client-s3": "^3.1045.0",
     "@aws-sdk/s3-presigned-post": "^3.1045.0",
     "@aws-sdk/s3-request-presigner": "^3.1045.0",
